@@ -1,20 +1,26 @@
-import { useState, useEffect } from 'react';
+
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, RefreshCw } from 'lucide-react';
+import OptimizedImage from './OptimizedImage';
+import { preloadImages, clearCache } from '../utils/cacheUtils';
+import { usePerformance } from '../hooks/usePerformance';
 
 const HeroSection = () => {
   const [currentTextIndex, setCurrentTextIndex] = useState(0);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [showCacheClear, setShowCacheClear] = useState(false);
+  const { measurePerformance } = usePerformance();
 
-  const heroTexts = [
+  const heroTexts = useMemo(() => [
     "New Standard of Sophistication",
-    "Pinnacle of Excellence",
+    "Pinnacle of Excellence", 
     "Legacy of Distinction"
-  ];
+  ], []);
 
-  // Expanded hero photos collection with new images
-  const heroPhotos = [
+  // Optimized hero photos collection - prioritize first few images
+  const heroPhotos = useMemo(() => [
     "/lovable-uploads/2329957a-d7b8-4f7d-972b-f79e1a8b71c1.png",
     "/lovable-uploads/f71bd9cd-c4c9-4a59-a24d-a6e49d984afe.png",
     "/lovable-uploads/b497ba4d-222d-4316-97e0-44f8c7702e39.png",
@@ -33,14 +39,32 @@ const HeroSection = () => {
     "/lovable-uploads/97e67e72-f29f-481a-8f83-299b395d8072.png",
     "/lovable-uploads/9e748710-7fa9-4148-bce9-cccefca96666.png",
     "/lovable-uploads/028f216e-ee0a-4bab-8d16-1a8fc8afdd5d.png"
-  ];
+  ], []);
 
   const scrollToPortfolio = () => {
-    const portfolioSection = document.getElementById('portfolio');
-    if (portfolioSection) {
-      portfolioSection.scrollIntoView({ behavior: 'smooth' });
-    }
+    measurePerformance('scroll-to-portfolio', () => {
+      const portfolioSection = document.getElementById('portfolio');
+      if (portfolioSection) {
+        portfolioSection.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
   };
+
+  const handleClearCache = () => {
+    measurePerformance('clear-cache', () => {
+      clearCache();
+    });
+  };
+
+  // Preload critical images on component mount
+  useEffect(() => {
+    // Preload first 3 images for immediate display
+    preloadImages(heroPhotos.slice(0, 3));
+    
+    // Show cache clear option after 5 seconds
+    const timer = setTimeout(() => setShowCacheClear(true), 5000);
+    return () => clearTimeout(timer);
+  }, [heroPhotos]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -51,13 +75,31 @@ const HeroSection = () => {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentPhotoIndex((prev) => (prev + 1) % heroPhotos.length);
+      setCurrentPhotoIndex((prev) => {
+        const newIndex = (prev + 1) % heroPhotos.length;
+        // Preload next image
+        if (newIndex + 1 < heroPhotos.length) {
+          preloadImages([heroPhotos[newIndex + 1]]);
+        }
+        return newIndex;
+      });
     }, 4000);
     return () => clearInterval(interval);
-  }, [heroPhotos.length]);
+  }, [heroPhotos]);
 
   return (
     <section className="relative min-h-screen flex items-center justify-center bg-gradient-luxury overflow-hidden">
+      {/* Cache Clear Button */}
+      {showCacheClear && (
+        <button
+          onClick={handleClearCache}
+          className="fixed top-24 right-4 z-50 bg-luxury-gold/90 text-luxury-black p-2 rounded-full hover:bg-luxury-gold transition-all duration-300 shadow-lg"
+          title="Clear Cache & Refresh"
+        >
+          <RefreshCw size={16} />
+        </button>
+      )}
+
       {/* Optimized Sliding Photo Background */}
       <div className="absolute inset-0 z-0">
         {heroPhotos.map((photo, index) => (
@@ -68,13 +110,15 @@ const HeroSection = () => {
                 ? 'opacity-50 sm:opacity-40 scale-105' 
                 : 'opacity-0 scale-100'
             }`}
-            style={{
-              backgroundImage: `url('${photo}')`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center center',
-              backgroundRepeat: 'no-repeat'
-            }}
-          />
+          >
+            <OptimizedImage
+              src={photo}
+              alt={`Hero background ${index + 1}`}
+              className="w-full h-full"
+              loading={index < 3 ? 'eager' : 'lazy'}
+              priority={index === 0}
+            />
+          </div>
         ))}
       </div>
 
